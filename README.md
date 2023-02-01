@@ -1,18 +1,8 @@
 ---
-title: "MMSE score prediction"
+title: "Elderly fall risk prediction"
 author: "Luiz Felipe Martucci"
 date: "2023-01-31"
-output:  
-  html_document:
-       keep_md: true
-  pdf_document: default
 ---
-
-
-
-
-
-
 
 
 ## Introduction
