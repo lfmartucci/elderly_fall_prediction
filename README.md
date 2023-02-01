@@ -12,9 +12,7 @@ This project aims to predict if an elderly has fallen in the past six months by 
 
 The data used in this project is from the work of Noh, B., Youm, C., Goh, E., et al. (2021), published in Nature Scientific Reports. The dataset contains 746 observations, and the target variable "History of Falls" is highly unbalanced. Therefore we will need to optimize our models to deal with this challenge.
 
-
-
-![](Main_files/figure-html/unnamed-chunk-1-1.png)<!-- -->
+<img src=plot1.png width= 500, align="center">
 
 ## Preparing our data
 Before training any model, we need to check for outliers and skews in data. Otherwise, those outliers can influence our model and scaling parameters. Even so, in this first version, we will train our first model on raw data to highlight how each step improves our model. As a first model, we will use logistic regression with lasso, ridge, and elastic net regularization.
