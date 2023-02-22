@@ -1,283 +1,218 @@
 ---
-title: "MMSE score prediction"
-author: "Luiz Felipe Martucci"
-date: "2023-01-31"
-output:
-  html_document: default
-  pdf_document: default
+title: "Brazil - Pesticide and Honey Production"
+output: github_document
+bibliography: refs.bib 
 ---
 
-```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r libs, message=FALSE, warning=FALSE, include=FALSE}
-(\(x){
-  sapply(x, function(x) if(!x %in% installed.packages()){
-    install.packages(x, dependencies = T)
-  })
-  sapply(x, library, character.only=T)
-})(c("tidyverse", "gt", "caret", "doParallel", "glmnet", "pROC", "kernlab", "naivebayes"))
+```{r libraries}
+library(tidyverse)
 
 
 ```
 
-```{r fns, message=FALSE, warning=FALSE, include=FALSE}
+Honey bees have a reputation for working hard. We are working hard to cause bee losses. From 1966 to 1979, most bee losses were attributable to pesticides (@ricscu). Ignoring the impact of pesticides on bee lives, in recent years, Brazil introduced a staggering number of new pesticides. So let's look at data about honey production across Brazilian estates, and pesticides.
+
+The data about honey production is from the Municipal Livestock Research collected by the Brazilian Institute of Geography and Statistics (IBGE), and data about approval of new pesticides is from the Brazilian Ministry of Agriculture and Livestock. Our analysis will target the converging timestamp in both datasets: 2000-2021.
+
+```{r honey_data}
 
 
-scale_min_max <- function(var){
-  (var - min(var)) / (max(var) - min(var))
-}
+get_honey_data <- function(){
   
-
-filter_vec <- function(exp, .data = NULL){
-  index <- exp
-  vec <- as.character(substitute(exp))[2]
-  vec <- substitute(vec)
-  vec <- eval(parse(text = vec))
-  if(is.null(.data)){
-  vec[index]
+  url_honey_data <- "https://sidra.ibge.gov.br/geratabela?format=xlsx&name=tabela74.xlsx&terr=NS&rank=-&query=t/74/n1/all/n3/all/u/y/v/all/p/all/c80/0,2687/d/v1000215%202/l/v,p%2Bc80,t"
+  
+  folder <- "data"
+  file <- file.path(folder, "honey_ppm_ibge.xlsx")
+  data_processed <- file.path(folder, "honey_processed.csv")
+  
+  if(dir.exists(folder) == FALSE) dir.create(folder)
+  
+  if(file.exists(file) == FALSE) download.file(url_honey_data, file)
+  
+  if(file.exists(data_processed) == TRUE){
+    data_final <- read_csv(data_processed)
   }else{
-    .data[index]
+    production_value <-  readxl::read_excel("data/honey_ppm_ibge.xlsx", 
+                                            sheet = "Valor da produção", skip = 4)
+    
+    production_kg <- readxl::read_excel("data/honey_ppm_ibge.xlsx", 
+                                        skip = 4)
+    # select cols about honey and estate id
+    data <- list(production_value = production_value,
+                 production_kg = production_kg) %>% 
+      lapply(., function(df) df %>%  select(2, contains("Mel")))
+    
+    # New col names
+    new_col_names <- list()
+    new_col_names$value <- c("estate", paste("year", 1974:2021, sep = "_"))
+    new_col_names$honey <- c("estate", paste("year", 1974:2021, sep = "_"))
+    
+    # correct col names
+    data_adj <- map2(data, new_col_names, function(data, col_names){
+      colnames(data) <- col_names
+      
+      data <- data %>% 
+        pivot_longer(cols = c(everything(), -c("estate")),
+                     names_to = "year")
+      
+      return(data)
+    })
+    
+    data_adj$production_kg <- data_adj$production_kg %>% rename(honey = value)
+    
+    data_final <- data_adj %>%
+      purrr::reduce(full_join) %>% 
+      mutate(year = gsub("year_", "", year),
+             # according to the data "-" is 0
+             across(c(everything(), - estate), ~gsub("-", 0, .)),
+             across(c(everything(), - estate), ~as.numeric(.)))
+    
+    write_csv(data_final, "data/honey_processed.csv")
+    
   }
+  
+  return(data_final)
+  
+  
+
+}
+
+honey_data <- get_honey_data()
+
+
+```
+
+```{r pesticide_approval_data}
+
+
+
+get_pesticide_approval_data <- function(){
+  
+  url_pesticide <- "https://www.gov.br/agricultura/pt-br/assuntos/insumos-agropecuarios/insumos-agricolas/agrotoxicos/RegistrosConcedidos20002023.xlsx"
+  
+  folder <- "data"
+  file <- file.path(folder, "approved_pesticide.xlsx")
+  data_processed <- file.path(folder, "pesticide_processed.csv")
+  
+  if(file.exists(file) == FALSE) download.file(url_pesticide, file)
+  
+  pest_data <- readxl::read_excel(file, 
+                             sheet = "Tabela Geral 2020 e Outros", 
+                             skip = 2)
+  
+  #This dataset is splited in several tables inside the same sheet. They are separated by blank rows. We will use this pattern to extract the interesting tables
+  
+  cols_until_2021 <- grep("2021", x = colnames(pest_data))
+  
+  pest_data_correct_cols <- pest_data %>% select(1:cols_until_2021, -contains("..."))
+  
+  seq_index <- function(vec){
+  #https://stackoverflow.com/questions/29184297/finding-the-start-and-stop-indices-in-sequence-in-r
+    start<- vec[!(vec-1) %in% vec]
+    stop <- vec[!(vec+1) %in% vec]
+    cbind(start, stop) %>% 
+      as_tibble()
+  }
+  
+  NAs_rows <-  which(!is.na(pest_data_correct_cols$"2000.0"))
+
+  tabls_ind <- seq_index(NAs_rows)
+
+  #ANVISA assessment
+  toxic_risk <- pest_data_correct_cols %>% 
+    slice(tabls_ind$start[1]:tabls_ind$stop[1])
+
+  #IBAMA assessment
+  environmental_risk <- pest_data_correct_cols %>%
+    slice(tabls_ind$start[2]:tabls_ind$stop[2])
+
+  list(toxic_risk, environmental_risk)
+  
+  
+}
+
+if(file.exists("data/ambiental_hazard_approv.csv") == TRUE){
+ ambiental_hazard_approv <- read_csv("data/ambiental_hazard_approv.csv") 
+}else{
+  pesticide_approval <- get_pesticide_approval_data()
+  
+  ambiental_hazard_approv <- pesticide_approval[[2]] %>% 
+  rename(hazard_classf = 1) %>% 
+  slice(-1) %>% 
+  pivot_longer(cols = -hazard_classf, 
+               values_transform = as.character,
+               names_to = "year",
+               values_to = "n_apprvd") %>% 
+  mutate(across(-hazard_classf, ~as.numeric(.)))
+  
+  write.csv(ambiental_hazard_approv, "data/ambiental_hazard_approv.csv", row.names = FALSE)
+
 }
 
 
-Bar_plot_theme <- function(){
+
+
+
+```
+
+```{r pesticide_purchase}
+
+get_pesticide_purchase_data <- function(){
   
-  font <- "Arial"
+  folder <- "data"
   
+  files_download <- lapply(2009:2021, function(year, folder){
+    
+    url <- sprintf("https://www.gov.br/ibama/pt-br/assuntos/quimicos-e-biologicos/agrotoxicos/arquivos/qualidadeambiental/relatorios/%i/", year)
+    
+    html <- rvest::read_html(url) %>% 
+      rvest::html_elements("a") %>% 
+      rvest::html_text()
+    
+    file_get <- html[grepl("classe_periculosidade.*xls|classe_.*ambiental.*xls", html)][1]
+    
+    url_get <- paste0(url, file_get)
+    
+    file_name <- sprintf("Vendas_por_classe_de_uso_%i.xls", year)
+    file_path <- file.path(folder, file_name)
+    
+    if(file.exists(file_path) == FALSE) download.file(url_get, file_path)
+    
+    data <- readxl::read_excel(file_path, range = "A4:H39")
+    
+    data <- data %>%
+      select(1, contains("CLASSE")) %>%
+      slice(-1) %>%
+      rename(location = 1) %>%
+      pivot_longer(- location,
+                   names_to = "class",
+                   values_to = "purchase_ton") %>%
+      mutate(year = year)
+    
+    return(data)
+    
+    
+  }, folder = folder)
+
   
-  theme(
-    #plot.margin = margin(16, 16, 16, 16),
-    #legend.position = "top",
-    plot.title = ggplot2::element_text(family = font, 
-                                       size = 16, 
-                                       face = "bold",
-                                       color = "#222222"),
-    plot.subtitle = ggplot2::element_text(family = font, 
-                                          size = 22,
-                                          margin = ggplot2::margin(9, 0, 9, 0)), 
-    legend.text.align = 0,
-    legend.background = ggplot2::element_blank(),
-    legend.title = ggplot2::element_blank(),
-    legend.key = ggplot2::element_blank(),
-    axis.title.x = ggplot2::element_blank(),
-    axis.title.y = ggplot2::element_text(
-      color = "#222222",
-      size = 11,
-      margin = margin(5, r = 10)
-    ),
-    axis.text = ggplot2::element_text(
-      family = font,
-      size = 11,
-      color = "#222222"
-    ),
-    axis.text.x        = ggplot2::element_text(margin = ggplot2::margin(5, b = 10)),
-    axis.ticks         = ggplot2::element_line(color = "#222222"),
-    axis.line          = ggplot2::element_line(color = "#222222"),
-    panel.grid.minor   = ggplot2::element_blank(),
-    panel.grid.major.y = ggplot2::element_blank(),
-    panel.grid.major.x = ggplot2::element_blank(),
-    panel.background   = ggplot2::element_blank(),
-    plot.background    = ggplot2::element_blank(),
-    strip.background   = ggplot2::element_rect(fill = "white"),
-    #strip.text = ggplot2::element_text(size = 22, hjust = 0),
-    aspect.ratio       = 1.21
-  )
+  return(files_download)
+  
+    
+
 }
 
-```
-
-
-## Introduction
-
-This project aims to predict if an elderly has fallen in the past six months by using information about his gait pattern.
-
-The data used in this project is from the work of Noh, B., Youm, C., Goh, E., et al. (2021), published in Nature Scientific Reports. The dataset contains 746 observations, and the target variable "History of Falls" is highly unbalanced. Therefore we will need to optimize our models to deal with this challenge.
-
-```{r data, message=FALSE, warning=FALSE, include=FALSE}
-
-df_full <- (\(){
-  d1 <- readxl::read_excel("41598_2021_91797_MOESM1_ESM.xlsx", 
-    skip = 1) %>% 
-  mutate(Number = as.numeric(Number)) %>% 
-  filter(!is.na(Number))
-
-d2 <-  readxl::read_excel("41598_2021_91797_MOESM1_ESM.xlsx", 
-    sheet = "Environmental characteristics", 
-    skip = 1) 
-
-  
-data <- left_join(d1, d2) %>% 
-  select(-c(`education year`, Fear_of_fall, `Fall risk`)) 
-
-
-#Correcting variable type
-d_adj <- data %>% mutate(across(where(is.numeric), ~ if(max(.) <= 5) factor(.)))
-
-# Some variables where incorrectly selected
-index <- grepl("time|speed|length", colnames(d_adj))
-correct_vars <- colnames(d_adj)[!index]
-
-
-d_adj <- d_adj %>%
-  select(all_of(correct_vars)) %>% 
-  cbind(Number = data$Number)
-
-
-data <- data %>% select(-all_of(correct_vars)) %>% 
-  left_join(d_adj, by="Number") %>% 
-  mutate(across(where(is.factor), ~ paste0("lv", .)),
-         across(where(is.character),as.factor))
-
-# correcting names
-namessub <- gsub("%", "pct", colnames(data))
-namessub <- gsub("[\\(|\\) ]", "", namessub)
-
-
-names(data) <- namessub
-
-return(data)
-
-  
-})()
-
+pesticide_purchase <- get_pesticide_purchase_data()%>%
+  plyr::ldply("tibble")
 
 ```
 
-```{r echo=FALSE}
-plots <- list()
-#scales::breaks_pretty()
-plots$p1 <- df_full %>% 
-  mutate(History_of_fall = ifelse(History_of_fall == "lv0", "No", "Yes")) %>% 
-  ggplot(aes(History_of_fall, fill= History_of_fall)) +
-  geom_bar(show.legend = FALSE)+
-  ylab("History of falls") +
-  scale_fill_manual(values = c("#00589B", "#C43362")) +
-  scale_y_continuous(expand = c(0, NA),
-                     limits = c(NA, NA))+
-  Bar_plot_theme()+
-  ggtitle("Distribution of history of falls observations")
 
-plots$p1
+# References
 
-```
+<div id="refs"></div>
 
-## Preparing our data
-Before training any model, we need to check for outliers and skews in data. Otherwise, those outliers can influence our model and scaling parameters. Even so, in this first version, we will train our first model on raw data to highlight how each step improves our model. As a first model, we will use logistic regression with lasso, ridge, and elastic net regularization.
-
-To train and later evaluate our model, we will split the data into two sets: training and testing. The training set will contain 80% of the data, and the remaining 20% will be used as a testing set
-
-```{r split data}
-(\(data){
-  set.seed(44)
-  index_trainData <- caret::createDataPartition(data$History_of_fall,
-                                                times=1,
-                                                p=.8,
-                                                list=FALSE)
-
-  train_data <<- data[index_trainData,] 
-  test_data <<- data[-index_trainData,]
-})(df_full)
-
-```
-
-Next, with the data split, we will scale our values using the min-max approach. We will store the min-max values of training data and use them to normalize the testing data, avoiding data leakage at this step.
-
-```{r scaling}
-scale_parameters <- (\(df){
-
-  
-  
- vars_max <- df %>% summarise(across(where(is.numeric), max))
- vars_min <- df %>% summarise(across(where(is.numeric), min))
-
-
- scale_params <- rbind(vars_max, vars_min) %>% as.data.frame()
-
- rownames(scale_params) <- c("max", "min")
-
- return(scale_params)
-  
-})(train_data)
-
-
-train_scl <- train_data %>% 
-  mutate(across(where(is.numeric), scale_min_max))
-
-
-test_scl <- map2(test_data %>% select(where(is.numeric)),
-                 scale_parameters, 
-                 function(x, y) (x - y[2]) / (y[1] - y[2])
-                 ) %>%
-  as.data.frame() %>% 
-  cbind(test_data %>% select(- where(is.numeric)))
-  
-
-
-
-```
-
-## Machine learning algorithms
-
-Now, we are ready to train our first model! We will do it using 5-fold cross-validation and searching for the best alpha and lambda parameters at the 0-1 range. 
-
-```{r glm, message=FALSE, warning=FALSE}
-
-glm_model <- (\(data){
-
-  
-  train_control <- trainControl(method          = "repeatedcv", 
-                                number          = 5,
-                                repeats         = 3,
-                                savePredictions = "final",
-                                classProbs      = TRUE,
-                                summaryFunction = twoClassSummary,
-                                allowParallel   = FALSE,
-                                sampling        = "smote")
-
-  set.seed(44)  
-  model <- caret::train(History_of_fall ~ .,
-               data      = data,
-               trControl = train_control,
-               method    = "glmnet",
-               family    = "binomial",
-               metric    = "ROC",
-               tuneGrid  = expand.grid(
-                  .lambda= seq(0, 1, length.out = 6),
-                  .alpha = seq(0, 1, length.out = 5))) # to get area under the ROC curve
-
-  
-
-  
-  perf_eval <-  model$results$Youden %>% max()
-  print(perf_eval)
-  
-  system("say terminei")
-  
-  return(model)
-         
-})(train_scl %>% select(-No_of_fall))
-
-
-glm_model$results$ROC %>% max()
-pROC::auc(train_scl$History_of_fall, predict(glm_model, train_scl, type= "prob")[,2])
-pROC::auc(test_scl$History_of_fall, predict(glm_model, test_scl, type= "prob")[,2])
-
-
-
-
-
-
-```
-
-Our basic trained model averaged an auROC of **0.59** on cross-validation. While the auROC achieved on training data were **0.66** and on testing data of **0.55**.
-
-
-
-
-
-## References 
-Noh, B., Youm, C., Goh, E., et al. XGBoost-based machine learning approach to predict the risk of fall in older adults using gait outcomes. Sci Rep 11, 12183 (2021). https://doi.org/10.1038/s41598-021-91797-w
 
