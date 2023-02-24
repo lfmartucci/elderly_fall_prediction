@@ -1,5 +1,6 @@
 ---
 title: "Brazil - Pesticide and Honey Production"
+author: "Luiz Felipe Martucci"
 output: github_document
 bibliography: refs.bib 
 ---
@@ -8,13 +9,60 @@ bibliography: refs.bib
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r libraries}
+```{r libraries, include = FALSE}
+req_libs <- c("tidyverse", 
+              "readxl",
+              "plyr",
+              "purrr",
+              "geojsonio",
+              "geogrid",
+              "rgdal",
+              "ggtext",
+              "rgeos",
+              "geojsonio",
+              "broom",
+              "forcats",
+              "readr"
+)
+
+b <- (function(libs){  
+  sapply(libs, function(x){
+    if(!x %in% installed.packages()) install.packages(x, dependencies = T)
+  })
+  
+  lib_version <- sapply(libs, function(x){
+    lib_version <- getNamespaceVersion(x)
+    string_lib <- paste0(x, " installed version: ", lib_version)
+    print(string_lib)
+    
+  })
+  
+  lib_version <- sort(lib_version)
+  
+  today_date <- date()
+  r_version <- R.Version()$version.string
+  
+  requirements <- c(today_date, 
+                    osVersion,
+                    r_version,
+                    lib_version)
+  
+  writeLines(requirements, "requirements.txt")
+
+    
+return(requirements)
+  
+  
+})(req_libs)
+  
 library(tidyverse)
 
 
 ```
 
-Honey bees have a reputation for working hard. We are working hard to cause bee losses. From 1966 to 1979, most bee losses were attributable to pesticides (@ricscu). Ignoring the impact of pesticides on bee lives, in recent years, Brazil introduced a staggering number of new pesticides. So let's look at data about honey production across Brazilian estates, and pesticides.
+
+Honey bees have a reputation for working hard. They not only produce honey but pollinate flowering plants. Together with other pollinators, they are responsible for more than 87% of flowering plant species' reproduction (@ostiguy). However, we are working hard to cause bee losses. From 1966 to 1979, most bee losses were attributable to pesticides (@ricscu), especially pesticides applied to agricultural or horticultural landscapes (@ostiguy). Ignoring their impact on bee lives, Brazil has been introducing a staggering amount of new pesticides year after year. So let's look at data about honey production across Brazilian states and the number of new pesticides approved.
+
 
 The data about honey production is from the Municipal Livestock Research collected by the Brazilian Institute of Geography and Statistics (IBGE), and data about approval of new pesticides is from the Brazilian Ministry of Agriculture and Livestock. Our analysis will target the converging timestamp in both datasets: 2000-2021.
 
@@ -41,22 +89,22 @@ get_honey_data <- function(){
     
     production_kg <- readxl::read_excel("data/honey_ppm_ibge.xlsx", 
                                         skip = 4)
-    # select cols about honey and estate id
+    # select cols about honey and state id
     data <- list(production_value = production_value,
                  production_kg = production_kg) %>% 
       lapply(., function(df) df %>%  select(2, contains("Mel")))
     
     # New col names
     new_col_names <- list()
-    new_col_names$value <- c("estate", paste("year", 1974:2021, sep = "_"))
-    new_col_names$honey <- c("estate", paste("year", 1974:2021, sep = "_"))
+    new_col_names$value <- c("state", paste("year", 1974:2021, sep = "_"))
+    new_col_names$honey <- c("state", paste("year", 1974:2021, sep = "_"))
     
     # correct col names
     data_adj <- map2(data, new_col_names, function(data, col_names){
       colnames(data) <- col_names
       
       data <- data %>% 
-        pivot_longer(cols = c(everything(), -c("estate")),
+        pivot_longer(cols = c(everything(), -c("state")),
                      names_to = "year")
       
       return(data)
@@ -68,8 +116,8 @@ get_honey_data <- function(){
       purrr::reduce(full_join) %>% 
       mutate(year = gsub("year_", "", year),
              # according to the data "-" is 0
-             across(c(everything(), - estate), ~gsub("-", 0, .)),
-             across(c(everything(), - estate), ~as.numeric(.)))
+             across(c(everything(), - state), ~gsub("-", 0, .)),
+             across(c(everything(), - state), ~as.numeric(.)))
     
     write_csv(data_final, "data/honey_processed.csv")
     
@@ -82,6 +130,11 @@ get_honey_data <- function(){
 }
 
 honey_data <- get_honey_data()
+
+honey_data <- honey_data %>% 
+  filter(year %in% 2000:max(year) & 
+           !state %in% c("Guanabara", NA)) %>% 
+  mutate(profit_by_production = value / honey)
 
 
 ```
@@ -205,11 +258,99 @@ get_pesticide_purchase_data <- function(){
 
 }
 
-pesticide_purchase <- get_pesticide_purchase_data()%>%
+if(file.exists("data/pesticide_purchases.csv") == TRUE){
+  pesticide_purchase <- read_csv("data/pesticide_purchases.csv")
+}else{
+  pesticide_purchase <- get_pesticide_purchase_data()%>%
   plyr::ldply("tibble")
+  
+  write.csv(pesticide_purchase, "data/pesticide_purchases.csv", row.names = FALSE)
+}
+
 
 ```
 
+
+```{r state_info}
+
+if(file.exists("data/states_info.csv")== TRUE){
+  states_info <- read_csv("data/states_info.csv")
+}else{
+  get_states_info <- function(){
+    
+   url <-  "http://blog.mds.gov.br/redesuas/wp-content/uploads/2018/06/Lista_Estados_Brasil_Versao_CSV.csv"
+   
+   download.file(url, "data/states_info.csv")
+   
+   read_csv("data/states_info.csv")
+   
+  }
+
+states_info <- get_states_info()
+  
+}
+
+
+
+```
+
+
+
+```{r map_data}
+
+
+if(file.exists("data/tidy_brazil_map.csv") == FALSE){
+  make_brazil_map <- function(){
+    folder <- "data"
+    brazil_raw_map <- file.path(folder, "brazil_map.json") 
+    
+    if(file.exists(brazil_raw_map) == FALSE){
+      download.file("https://gist.githubusercontent.com/ruliana/1ccaaab05ea113b0dff3b22be3b4d637/raw/196c0332d38cb935cfca227d28f7cecfa70b412e/br-states.json",
+                    brazil_raw_map)
+    }
+    
+    og_shape <- geojsonio::geojson_read(brazil_raw_map, what="sp")
+    
+    og_shape@data <- og_shape@data %>% rename(state = nome)
+    
+    
+    #The map comes without id on @data
+    #Corrects id on @data and calculate center position for each UF
+    centers <-  data.frame(og_shape %>% rgeos::gCentroid(byid = T)) %>% 
+  mutate(id = row_number() %>% as.character(),
+         UF = c("AC", "AL", "AM", "AP", "BA", "CE",
+         "DF", "ES", "GO", "MA", "MG", "MS",
+         "MT", "PA", "PB", "PE", "PI", "PR", 
+         "RJ", "RN", "RO", "RR", "RS", "SC",
+         "SE", "SP", "TO"))
+    
+    tidy_map <- og_shape %>% 
+      broom::tidy() %>% 
+      left_join(centers)
+    
+    write.csv(tidy_map, "data/tidy_brazil_map.csv", row.names = FALSE)
+    
+    return(tidy_map)
+    
+  }
+  
+  tidy_map <- make_brazil_map()
+  
+}else{
+  tidy_map <- read_csv("data/tidy_brazil_map.csv")
+  
+}
+
+
+
+
+
+
+
+
+
+
+```
 
 # References
 
