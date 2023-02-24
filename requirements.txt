@@ -1,0 +1,16 @@
+Fri Feb 24 10:49:32 2023
+macOS Big Sur/Monterey 10.16
+R version 4.2.0 (2022-04-22)
+broom installed version: 1.0.3
+forcats installed version: 1.0.0
+geogrid installed version: 0.1.1
+geojsonio installed version: 0.10.0
+geojsonio installed version: 0.10.0
+ggtext installed version: 0.1.2
+plyr installed version: 1.8.8
+purrr installed version: 1.0.1
+readr installed version: 2.1.3
+readxl installed version: 1.4.1
+rgdal installed version: 1.6-4
+rgeos installed version: 0.6-1
+tidyverse installed version: 1.3.2

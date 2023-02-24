@@ -68,8 +68,6 @@ Data from the Brazilian Institute of Environment and Renewable Natural Resources
 
 The data about honey production is from the Municipal Livestock Research collected by the Brazilian Institute of Geography and Statistics (IBGE), and data about approval of new pesticides is from the Brazilian Ministry of Agriculture and Livestock. Our analysis will target the converging timestamp in both datasets: 2000-2021.
 
-
-
 ```{r data}
 
 source("data_load.R")
