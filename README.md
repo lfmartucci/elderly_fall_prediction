@@ -15,7 +15,7 @@ buying a staggering amount of pesticides year after year.
 Data from the Brazilian Institute of Environment and Renewable Natural
 Resources (IBAMA) shows that after Jair Bolsonaro’s election in 2018,
 pesticide purchases increased drastically. Between 2018 and 2021
-increased by `{r}1+1`
+increased by…
 
 The data about honey production is from the Municipal Livestock Research
 collected by the Brazilian Institute of Geography and Statistics (IBGE),

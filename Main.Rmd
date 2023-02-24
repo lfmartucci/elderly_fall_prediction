@@ -88,8 +88,8 @@ honey_data <- honey_data %>%
 
 ```{r merge_data}
 
-honey_pesticides <- honey_data %>% 
-  left_join(states_info, by = c("state" = "Estado"))
+# honey_pesticides <- honey_data %>% 
+#   left_join(states_info, by = c("state" = "Estado"))
 
 ```
 
