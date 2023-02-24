@@ -75,6 +75,7 @@ The data about honey production is from the Municipal Livestock Research collect
 source("data_load.R")
 
 honey_data <- get_honey_data()
+pesticide_hazard_data <- get_pesticide_approval_data()
 
 
 honey_data <- honey_data %>% 
