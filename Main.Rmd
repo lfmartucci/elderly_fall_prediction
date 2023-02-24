@@ -6,7 +6,8 @@ bibliography: refs.bib
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+                      include = FALSE)
 ```
 
 ```{r libraries, include = FALSE}
@@ -25,7 +26,7 @@ req_libs <- c("tidyverse",
               "readr"
 )
 
-b <- (function(libs){  
+(function(libs){  
   sapply(libs, function(x){
     if(!x %in% installed.packages()) install.packages(x, dependencies = T)
   })
@@ -61,75 +62,20 @@ library(tidyverse)
 ```
 
 
-Honey bees have a reputation for working hard. They not only produce honey but pollinate flowering plants. Together with other pollinators, they are responsible for more than 87% of flowering plant species' reproduction (@ostiguy). However, we are working hard to cause bee losses. From 1966 to 1979, most bee losses were attributable to pesticides (@ricscu), especially pesticides applied to agricultural or horticultural landscapes (@ostiguy). Ignoring their impact on bee lives, Brazil has been introducing a staggering amount of new pesticides year after year. So let's look at data about honey production across Brazilian states and the number of new pesticides approved.
+Honey bees have a reputation for working hard. They not only produce honey but pollinate flowering plants. Together with other pollinators, they are responsible for more than 87% of flowering plant species' reproduction (@ostiguy). However, we are working hard to cause bee losses. From 1966 to 1979, most bee losses were attributable to pesticides (@ricscu), especially pesticides applied to agricultural or horticultural landscapes (@ostiguy). Ignoring their impact on bee lives, Brazil has been introducing new and buying a staggering amount of pesticides year after year.
 
+Data from the Brazilian Institute of Environment and Renewable Natural Resources (IBAMA) shows that after Jair Bolsonaro's election in 2018, pesticide purchases increased drastically. Between 2018 and 2021 increased by...
 
 The data about honey production is from the Municipal Livestock Research collected by the Brazilian Institute of Geography and Statistics (IBGE), and data about approval of new pesticides is from the Brazilian Ministry of Agriculture and Livestock. Our analysis will target the converging timestamp in both datasets: 2000-2021.
 
-```{r honey_data}
 
 
-get_honey_data <- function(){
-  
-  url_honey_data <- "https://sidra.ibge.gov.br/geratabela?format=xlsx&name=tabela74.xlsx&terr=NS&rank=-&query=t/74/n1/all/n3/all/u/y/v/all/p/all/c80/0,2687/d/v1000215%202/l/v,p%2Bc80,t"
-  
-  folder <- "data"
-  file <- file.path(folder, "honey_ppm_ibge.xlsx")
-  data_processed <- file.path(folder, "honey_processed.csv")
-  
-  if(dir.exists(folder) == FALSE) dir.create(folder)
-  
-  if(file.exists(file) == FALSE) download.file(url_honey_data, file)
-  
-  if(file.exists(data_processed) == TRUE){
-    data_final <- read_csv(data_processed)
-  }else{
-    production_value <-  readxl::read_excel("data/honey_ppm_ibge.xlsx", 
-                                            sheet = "Valor da produção", skip = 4)
-    
-    production_kg <- readxl::read_excel("data/honey_ppm_ibge.xlsx", 
-                                        skip = 4)
-    # select cols about honey and state id
-    data <- list(production_value = production_value,
-                 production_kg = production_kg) %>% 
-      lapply(., function(df) df %>%  select(2, contains("Mel")))
-    
-    # New col names
-    new_col_names <- list()
-    new_col_names$value <- c("state", paste("year", 1974:2021, sep = "_"))
-    new_col_names$honey <- c("state", paste("year", 1974:2021, sep = "_"))
-    
-    # correct col names
-    data_adj <- map2(data, new_col_names, function(data, col_names){
-      colnames(data) <- col_names
-      
-      data <- data %>% 
-        pivot_longer(cols = c(everything(), -c("state")),
-                     names_to = "year")
-      
-      return(data)
-    })
-    
-    data_adj$production_kg <- data_adj$production_kg %>% rename(honey = value)
-    
-    data_final <- data_adj %>%
-      purrr::reduce(full_join) %>% 
-      mutate(year = gsub("year_", "", year),
-             # according to the data "-" is 0
-             across(c(everything(), - state), ~gsub("-", 0, .)),
-             across(c(everything(), - state), ~as.numeric(.)))
-    
-    write_csv(data_final, "data/honey_processed.csv")
-    
-  }
-  
-  return(data_final)
-  
-  
+```{r data}
 
-}
+source("data_load.R")
 
 honey_data <- get_honey_data()
+
 
 honey_data <- honey_data %>% 
   filter(year %in% 2000:max(year) & 
@@ -139,161 +85,14 @@ honey_data <- honey_data %>%
 
 ```
 
-```{r pesticide_approval_data}
 
 
+```{r merge_data}
 
-get_pesticide_approval_data <- function(){
-  
-  url_pesticide <- "https://www.gov.br/agricultura/pt-br/assuntos/insumos-agropecuarios/insumos-agricolas/agrotoxicos/RegistrosConcedidos20002023.xlsx"
-  
-  folder <- "data"
-  file <- file.path(folder, "approved_pesticide.xlsx")
-  data_processed <- file.path(folder, "pesticide_processed.csv")
-  
-  if(file.exists(file) == FALSE) download.file(url_pesticide, file)
-  
-  pest_data <- readxl::read_excel(file, 
-                             sheet = "Tabela Geral 2020 e Outros", 
-                             skip = 2)
-  
-  #This dataset is splited in several tables inside the same sheet. They are separated by blank rows. We will use this pattern to extract the interesting tables
-  
-  cols_until_2021 <- grep("2021", x = colnames(pest_data))
-  
-  pest_data_correct_cols <- pest_data %>% select(1:cols_until_2021, -contains("..."))
-  
-  seq_index <- function(vec){
-  #https://stackoverflow.com/questions/29184297/finding-the-start-and-stop-indices-in-sequence-in-r
-    start<- vec[!(vec-1) %in% vec]
-    stop <- vec[!(vec+1) %in% vec]
-    cbind(start, stop) %>% 
-      as_tibble()
-  }
-  
-  NAs_rows <-  which(!is.na(pest_data_correct_cols$"2000.0"))
-
-  tabls_ind <- seq_index(NAs_rows)
-
-  #ANVISA assessment
-  toxic_risk <- pest_data_correct_cols %>% 
-    slice(tabls_ind$start[1]:tabls_ind$stop[1])
-
-  #IBAMA assessment
-  environmental_risk <- pest_data_correct_cols %>%
-    slice(tabls_ind$start[2]:tabls_ind$stop[2])
-
-  list(toxic_risk, environmental_risk)
-  
-  
-}
-
-if(file.exists("data/ambiental_hazard_approv.csv") == TRUE){
- ambiental_hazard_approv <- read_csv("data/ambiental_hazard_approv.csv") 
-}else{
-  pesticide_approval <- get_pesticide_approval_data()
-  
-  ambiental_hazard_approv <- pesticide_approval[[2]] %>% 
-  rename(hazard_classf = 1) %>% 
-  slice(-1) %>% 
-  pivot_longer(cols = -hazard_classf, 
-               values_transform = as.character,
-               names_to = "year",
-               values_to = "n_apprvd") %>% 
-  mutate(across(-hazard_classf, ~as.numeric(.)))
-  
-  write.csv(ambiental_hazard_approv, "data/ambiental_hazard_approv.csv", row.names = FALSE)
-
-}
-
-
-
-
+honey_pesticides <- honey_data %>% 
+  left_join(states_info, by = c("state" = "Estado"))
 
 ```
-
-```{r pesticide_purchase}
-
-get_pesticide_purchase_data <- function(){
-  
-  folder <- "data"
-  
-  files_download <- lapply(2009:2021, function(year, folder){
-    
-    url <- sprintf("https://www.gov.br/ibama/pt-br/assuntos/quimicos-e-biologicos/agrotoxicos/arquivos/qualidadeambiental/relatorios/%i/", year)
-    
-    html <- rvest::read_html(url) %>% 
-      rvest::html_elements("a") %>% 
-      rvest::html_text()
-    
-    file_get <- html[grepl("classe_periculosidade.*xls|classe_.*ambiental.*xls", html)][1]
-    
-    url_get <- paste0(url, file_get)
-    
-    file_name <- sprintf("Vendas_por_classe_de_uso_%i.xls", year)
-    file_path <- file.path(folder, file_name)
-    
-    if(file.exists(file_path) == FALSE) download.file(url_get, file_path)
-    
-    data <- readxl::read_excel(file_path, range = "A4:H39")
-    
-    data <- data %>%
-      select(1, contains("CLASSE")) %>%
-      slice(-1) %>%
-      rename(location = 1) %>%
-      pivot_longer(- location,
-                   names_to = "class",
-                   values_to = "purchase_ton") %>%
-      mutate(year = year)
-    
-    return(data)
-    
-    
-  }, folder = folder)
-
-  
-  return(files_download)
-  
-    
-
-}
-
-if(file.exists("data/pesticide_purchases.csv") == TRUE){
-  pesticide_purchase <- read_csv("data/pesticide_purchases.csv")
-}else{
-  pesticide_purchase <- get_pesticide_purchase_data()%>%
-  plyr::ldply("tibble")
-  
-  write.csv(pesticide_purchase, "data/pesticide_purchases.csv", row.names = FALSE)
-}
-
-
-```
-
-
-```{r state_info}
-
-if(file.exists("data/states_info.csv")== TRUE){
-  states_info <- read_csv("data/states_info.csv")
-}else{
-  get_states_info <- function(){
-    
-   url <-  "http://blog.mds.gov.br/redesuas/wp-content/uploads/2018/06/Lista_Estados_Brasil_Versao_CSV.csv"
-   
-   download.file(url, "data/states_info.csv")
-   
-   read_csv("data/states_info.csv")
-   
-  }
-
-states_info <- get_states_info()
-  
-}
-
-
-
-```
-
 
 
 ```{r map_data}
@@ -351,6 +150,84 @@ if(file.exists("data/tidy_brazil_map.csv") == FALSE){
 
 
 ```
+
+
+
+
+Após o ano de 2018 iniciou um período de crescimento no uso de pesticidas como nunca havia sido registrado até então
+```{r pesticide_growth, eval=FALSE, include=FALSE}
+exp <- honey_pesticides %>% 
+  filter(!is.na(`Região`)) %>% 
+  group_by(year) %>% 
+  mutate(prod_total = sum(honey),
+         prod_pct = honey / prod_total * 100) %>% 
+  inner_join(pesticide_purchase, multiple = "all") %>% 
+  rename(region = `Região`)
+
+p_pesticide_purchases <- (\(data_plot){
+  
+  df <- data_plot %>% 
+  group_by(year, class) %>% 
+  summarise(purchase = sum(purchase_ton, na.rm = TRUE)) %>% 
+    mutate(class = case_when(class == "CLASSE I" ~ "++++",
+                             class == "CLASSE II" ~ "+++",
+                             class == "CLASSE III" ~ "++",
+                             class == "CLASSE IV" ~ "+"),
+           class = factor(class, levels = c("+", "++", "+++", "++++")),
+           class = forcats::fct_rev(class))
+  
+  y_pos = max(df$purchase)
+
+  
+  label_df <- tibble(x_year = 2017.5,
+                       y_pos = y_pos, 
+                       z = "<span style = 'font-family: SFProText-Semibold'>AFTER</span>
+                     <span style = 'font-family: SFProText-Light'>2018, with Bolsonaro's elections<br>pesticides purchases increased dramatically</span>")
+  
+  #stringr::str_wrap() #is great for automatic line break
+    
+  
+
+  plot_ <- df %>% 
+    ggplot() + # if I let aes inside ggplot I can't use other df
+    geom_area(aes(year, purchase, fill = class), 
+              stat = "identity", alpha = .61) +
+    geom_area(data = . %>% filter(year >= 2018),
+              aes(year, purchase, fill = class)) +
+    scale_fill_manual(values = colors_pal("deadly"), 
+                      guide = guide_legend(reverse=TRUE)) + 
+    
+    plot_theme("dark") +
+    geom_vline(xintercept = 2018, color = "#EEEEEE")+
+    labs(y = "Purchases (ton)", 
+         x = NULL,
+         fill = "Pesticide's enviromental danger:",
+         title = "Brazil pesticides purchases") + 
+    ggtext::geom_richtext(label_df, mapping = aes(x = x_year,
+                                      y = y_pos,
+                                      label = z),
+              color = "#EEEEEE",
+              #instead of using font name, using family allows to makes adjustment like bold
+              #family = "SF Pro Text", 
+              fill = NA,
+              label.color = NA,
+              hjust = .93,
+              vjust = -2.3) 
+
+
+
+  
+  return(plot_)
+  
+  
+})(data_plot = exp)
+p_pesticide_purchases
+
+
+```
+
+
+
 
 # References
 
