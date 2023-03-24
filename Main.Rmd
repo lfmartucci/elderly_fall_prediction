@@ -2,8 +2,9 @@
 title: "MMSE score prediction"
 author: "Luiz Felipe Martucci"
 date: "2023-01-31"
-output:
-  html_document: default
+output:  
+  html_document:
+       keep_md: true
   pdf_document: default
 ---
 
@@ -65,12 +66,12 @@ Bar_plot_theme <- function(){
     axis.title.x = ggplot2::element_blank(),
     axis.title.y = ggplot2::element_text(
       color = "#222222",
-      size = 11,
+      size = 14,
       margin = margin(5, r = 10)
     ),
     axis.text = ggplot2::element_text(
       family = font,
-      size = 11,
+      size = 14,
       color = "#222222"
     ),
     axis.text.x        = ggplot2::element_text(margin = ggplot2::margin(5, b = 10)),
@@ -99,12 +100,12 @@ The data used in this project is from the work of Noh, B., Youm, C., Goh, E., et
 ```{r data, message=FALSE, warning=FALSE, include=FALSE}
 
 df_full <- (\(){
-  d1 <- readxl::read_excel("41598_2021_91797_MOESM1_ESM.xlsx", 
+  d1 <- readxl::read_excel("data/41598_2021_91797_MOESM1_ESM.xlsx", 
     skip = 1) %>% 
   mutate(Number = as.numeric(Number)) %>% 
   filter(!is.na(Number))
 
-d2 <-  readxl::read_excel("41598_2021_91797_MOESM1_ESM.xlsx", 
+d2 <-  readxl::read_excel("data/41598_2021_91797_MOESM1_ESM.xlsx", 
     sheet = "Environmental characteristics", 
     skip = 1) 
 
@@ -157,10 +158,18 @@ plots$p1 <- df_full %>%
   scale_fill_manual(values = c("#00589B", "#C43362")) +
   scale_y_continuous(expand = c(0, NA),
                      limits = c(NA, NA))+
-  Bar_plot_theme()+
-  ggtitle("Distribution of history of falls observations")
+  Bar_plot_theme()
 
 plots$p1
+
+ggsave("p1.png",
+       plots$p1,
+       device = "png",
+       units = "cm",
+       width = 8,
+       dpi= "retina",
+       bg = "white"
+)
 
 ```
 
@@ -272,8 +281,7 @@ pROC::auc(test_scl$History_of_fall, predict(glm_model, test_scl, type= "prob")[,
 
 ```
 
-Our basic trained model averaged an auROC of **0.59** on cross-validation. While the auROC achieved on training data were **0.66** and on testing data of **0.55**.
-
+Our basic trained model averaged an auROC of **0.59** on cross-validation. While the auROC achieved on training data was **0.66** and on testing data **0.55**.
 
 
 
