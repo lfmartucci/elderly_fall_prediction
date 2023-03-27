@@ -1,0 +1,644 @@
+---
+title: "TCC final Arthur Ruiz"
+author: "Arthur Ruiz Pereira"
+date: "2023-03-20"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libs, message=FALSE, warning=FALSE, include=FALSE}
+
+(\(x){
+  sapply(x, function(x) if(!x %in% installed.packages()){
+    install.packages(x, dependencies = T)
+  })
+  sapply(x, library, character.only=T)
+})(c("tidyverse", 
+     "gt", 
+     "caret", 
+     "randomForest", 
+     "lightgbm", 
+     "doParallel", 
+     "glmnet", 
+     "pROC",
+     "kernlab", 
+     "naivebayes", 
+     "mlbench", 
+     "sAIC", 
+     "ggcorrplot", 
+     "GGally", 
+     "data.table", 
+     "tm", 
+     "tidymodels", 
+     "janitor", 
+     "ggpubr", 
+     "funModeling", 
+     "ggplot2", 
+     "dplyr", 
+     "DescTools", 
+     "Boruta", 
+     "DataExplorer",
+     "smotefamily", 
+     "ROSE", 
+     "klaR", 
+     "gridExtra", 
+     "vtable", 
+     "data.table", 
+     "compareGroups", 
+     "RCurl", 
+     "themis", 
+     "FactoMineR", 
+     "factoextra", 
+     "patchwork", 
+     "vegan"))
+
+```
+
+```{r fns, message=FALSE, warning=FALSE, include=FALSE}
+
+scale_min_max <- function(var){
+  (var - min(var)) / (max(var) - min(var))
+}
+
+
+filter_vec <- function(exp, .data = NULL){
+  index <- exp
+  vec <- as.character(substitute(exp))[2]
+  vec <- substitute(vec)
+  vec <- eval(parse(text = vec))
+  if(is.null(.data)){
+    vec[index]
+  }else{
+    .data[index]
+  }
+}
+
+
+Bar_plot_theme <- function(){
+  
+  font <- "Arial"
+  
+  
+  theme(
+    #plot.margin = margin(16, 16, 16, 16),
+    #legend.position = "top",
+    plot.title = ggplot2::element_text(family = font, 
+                                       size = 16, 
+                                       face = "bold",
+                                       color = "#222222"),
+    plot.subtitle = ggplot2::element_text(family = font, 
+                                          size = 22,
+                                          margin = ggplot2::margin(9, 0, 9, 0)), 
+    legend.text.align = 0,
+    legend.background = ggplot2::element_blank(),
+    legend.title = ggplot2::element_blank(),
+    legend.key = ggplot2::element_blank(),
+    axis.title.x = ggplot2::element_blank(),
+    axis.title.y = ggplot2::element_text(
+      color = "#222222",
+      size = 11,
+      margin = margin(5, r = 10)
+    ),
+    axis.text = ggplot2::element_text(
+      family = font,
+      size = 11,
+      color = "#222222"
+    ),
+    axis.text.x        = ggplot2::element_text(margin = ggplot2::margin(5, b = 10)),
+    axis.ticks         = ggplot2::element_line(color = "#222222"),
+    axis.line          = ggplot2::element_line(color = "#222222"),
+    panel.grid.minor   = ggplot2::element_blank(),
+    panel.grid.major.y = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_blank(),
+    panel.background   = ggplot2::element_blank(),
+    plot.background    = ggplot2::element_blank(),
+    strip.background   = ggplot2::element_rect(fill = "white"),
+    #strip.text = ggplot2::element_text(size = 22, hjust = 0),
+    aspect.ratio       = 1.21
+  )
+}
+
+```
+
+## Introdução
+
+Este projeto visa prever se um indivíduo caiu nos últimos seis meses, utilizando informações antropométricas e relativas ao seu padrão de marcha.
+
+Os dados usados são do trabalho de Noh, B., Youm, C., Goh, E., et al. (2021), publicado na Nature Scientific Reports. O dataset contém 746 observações e a variável resposta "History of fall é altamente desbalanceada. Portanto, há necessidade de otimizar os modelos, afim de lidar com esse desafio da melhor maneira.
+
+```{r data, message=FALSE, warning=FALSE, include=FALSE}
+
+df_full <- (\(){
+  d1 <- readxl::read_excel("41598_2021_91797_MOESM1_ESM.xlsx", 
+    skip = 1) %>% 
+  mutate(Number = as.numeric(Number)) %>% 
+  filter(!is.na(Number))
+
+  d2 <-  readxl::read_excel("41598_2021_91797_MOESM1_ESM.xlsx", 
+    sheet = "Environmental characteristics", 
+    skip = 1)
+  
+  
+data <- left_join(d1, d2) %>% 
+  dplyr::select(-c(`education year`, Fear_of_fall, BMI_level, `Fall risk`))
+
+
+#Correcting variable type
+d_adj <- data %>% mutate(across(where(is.numeric), ~ if(max(.) <= 5) factor(.)))
+
+# Some variables where incorrectly selected
+index <- grepl("time|speed|length", colnames(d_adj))
+correct_vars <- colnames(d_adj)[!index]
+
+
+d_adj <- d_adj %>%
+  dplyr::select(all_of(correct_vars)) %>% 
+  cbind(Number = data$Number)
+
+
+data <- data %>% 
+  dplyr::select(-all_of(correct_vars)) %>% 
+  left_join(d_adj, by="Number") %>% 
+  mutate(across(where(is.factor), ~ paste0("lv", .)),
+         across(where(is.character),as.factor))
+
+# correcting names
+namessub <- gsub("%", "pct", colnames(data))
+namessub <- gsub("[\\(|\\) ]", "", namessub)
+
+
+names(data) <- namessub
+
+
+
+return(data)
+
+
+})()
+
+
+```
+
+```{r exclude, message=FALSE, warning=FALSE, include=FALSE}
+
+df_main <- df_full %>% 
+  dplyr::select(-c(Number, age_group, No_of_fall))
+
+```
+
+## Análise descritiva e exploratória dos dados
+
+```{r echo=FALSE}
+
+compareGroups(History_of_fall ~ .-History_of_fall, data = df_main) %>% 
+  createTable()
+
+plot_bar(df_main)
+
+plot_correlation(df_main)
+
+```
+
+PCA
+
+```{r pca, echo=FALSE}
+
+
+qnt_dm <- df_main %>% 
+  dplyr::select(1:33)
+
+qlt_dm <- df_main %>% 
+  dplyr::select(34:36)
+
+
+std_qnt_dm <- decostand(qnt_dm, 
+                        method = "standardize")
+
+std_df_main <- cbind(std_qnt_dm, qlt_dm)
+
+
+
+
+# PCA factominer
+
+pca_df_main_fcm <- std_df_main %>% 
+  PCA(scale.unit = TRUE, 
+      ncp = 5,
+      quali.sup = 34:36, 
+      graph = FALSE)
+
+g1 <- plot(pca_df_main_fcm, 
+           choix = "ind")
+
+g2 <- plot(pca_df_main_fcm, 
+           choix = "var")
+
+
+fviz_mca_biplot(pca_df_main_fcm, 
+                habillage = "History_of_fall", 
+                addEllipses = TRUE, 
+                geom.ind = c("point"), 
+                title = "Fatorial Map", 
+                repel = TRUE)
+
+
+g2
+
+corrplot::corrplot(pca_df_main_fcm$var$cor)
+
+
+
+
+
+
+
+```
+
+## Seleção de variáveis
+
+Utilizando Boruta
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+set.seed(11)
+boruta <- Boruta(History_of_fall~., data = std_df_main, doTrace = 2)
+print(boruta)
+getConfirmedFormula(boruta)
+
+```
+
+Boruta reportou 16 variáveis consideradas importantes. 13 variáveis sem importância. E 6 variáveis que Boruta é incapaz de tomar decisão.
+
+```{r echo=FALSE}
+
+plot(boruta, xlab = "", xaxt = "n", main = "Variable Importance")
+
+lz<-lapply(1:ncol(boruta$ImpHistory),function(i)
+boruta$ImpHistory[is.finite(boruta$ImpHistory[,i]),i])
+
+names(lz) <- colnames(boruta$ImpHistory)
+
+Labels <- sort(sapply(lz,median))
+
+axis(side = 1,las=2,labels = names(Labels),
+at = 1:ncol(boruta$ImpHistory), cex.axis = 0.7)
+
+```
+No gráfico, os boxplots azuis correspondem ao Z-score mínimo, médio e máximo de um "shadow attribute". Boxplots verdes representam as variáveis 
+confirmadas como importantes, amarelas, as variáveis de dúvida, e em vermelho, as variáveis rejeitadas ou sem importância.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+final.boruta <- TentativeRoughFix(boruta)
+print(final.boruta)
+getConfirmedFormula(final.boruta)
+
+```
+
+Boruta reportou 19 variáveis consideradas importantes e 16 variáveis sem importância.
+
+```{r echo=FALSE}
+
+plot(final.boruta, xlab = "", xaxt = "n", main = "Variable Importance")
+
+lz<-lapply(1:ncol(final.boruta$ImpHistory),function(i)
+final.boruta$ImpHistory[is.finite(final.boruta$ImpHistory[,i]),i])
+
+names(lz) <- colnames(final.boruta$ImpHistory)
+
+Labels <- sort(sapply(lz,median))
+
+axis(side = 1,las=2,labels = names(Labels),
+at = 1:ncol(final.boruta$ImpHistory), cex.axis = 0.7)
+
+```
+
+```{r echo=FALSE}
+
+getSelectedAttributes(final.boruta, withTentative = F)
+
+boruta.df <- attStats(final.boruta)
+class(boruta.df)
+
+print(boruta.df)
+
+```
+
+## Data spliting
+
+Spliting data. Treino e teste.
+
+```{r split data}
+(\(data){
+  set.seed(22)
+  index_trainData <- caret::createDataPartition(df_main$History_of_fall,
+                                                times = 1,
+                                                p = .80,
+                                                list = FALSE)
+
+  train_data <<- data[index_trainData,] 
+  test_data <<- data[-index_trainData,]
+})(df_main)
+
+```
+
+Pela análise descritiva dos dados, verificou-se seu desbalanceamento. Há então a necessidade de se fazer um "Random Oversampling", onde as observações da classe minoritária serão duplicadas alcançando o mesmo número de observações da classe majoritária.
+
+```{r dm}
+
+table(train_data$History_of_fall)
+table(test_data$History_of_fall)
+
+# Oversampling
+
+up_train_data <- 
+  recipe(History_of_fall~., data = train_data) %>% 
+  step_upsample(History_of_fall) %>% 
+  prep() %>% 
+  juice()
+
+
+up_train_data %>% tabyl(History_of_fall)
+
+
+
+# Downsampling
+
+down_train_data <- 
+  recipe(History_of_fall~., data = train_data) %>% 
+  step_downsample(History_of_fall) %>% 
+  prep() %>% 
+  juice()
+
+
+down_train_data %>% tabyl(History_of_fall)
+
+
+
+```
+Em seguida, escalaremos os valores usando a abordagem min-max. Armazenando-os e usando-os para normalizar os dados de teste.
+
+```{r scaling}
+scale_parameters <- (\(df){
+  
+  
+
+ vars_max <- df %>% summarise(across(where(is.numeric), max))
+ vars_min <- df %>% summarise(across(where(is.numeric), min))
+ 
+ 
+ scale_params <- rbind(vars_max, vars_min) %>% as.data.frame()
+ 
+ rownames(scale_params) <- c("max", "min")
+ 
+ return(scale_params)
+  
+})(down_train_data)
+
+
+train_scl <- down_train_data %>% 
+  mutate(across(where(is.numeric), scale_min_max))
+
+
+test_scl <- map2(test_data %>% dplyr::select(where(is.numeric)),
+                 scale_parameters, 
+                 function(x, y) (x - y[2]) / (y[1] - y[2])
+                 ) %>%
+  as.data.frame() %>% 
+  cbind(test_data %>% dplyr::select(- where(is.numeric)))
+  
+
+
+
+```
+
+
+## MACHINE LEARNING
+
+GLM
+
+```{r glm, message=FALSE, warning=FALSE}
+
+glm_model <- (\(data){
+  
+  set.seed(33) 
+
+  train_control <- trainControl(method          = "repeatedcv", 
+                                number          = 10,
+                                repeats         = 3,
+                                savePredictions = "final",
+                                classProbs      = TRUE,
+                                summaryFunction = twoClassSummary,
+                                allowParallel   = FALSE)
+  
+   
+  model <- caret::train(History_of_fall ~ .,
+               data = train_scl,
+               trControl = train_control,
+               method = "glmnet",
+               family = "binomial",
+               metric = "Accuracy",
+               tuneGrid = expand.grid(
+                  .lambda= seq(0, 1, length.out = 6),
+                  .alpha = seq(0, 1, length.out = 5))) # to get area under the ROC curve
+  
+  
+  perf_eval <-  model$results$Youden %>% max()
+  print(perf_eval)
+  
+  system("say terminei")
+  
+  return(model)
+         
+})(train_scl %>% select(-No_of_fall))
+
+print(glm_model)
+
+glm_model$results$ROC %>% max()
+pROC::auc(train_scl$History_of_fall, predict(glm_model, train_scl, type= "prob")[,2])
+pROC::auc(test_scl$History_of_fall, predict(glm_model, test_scl, type= "prob")[,2])
+
+confusionMatrix(glm_model)
+
+
+
+
+
+
+```
+
+GLM Prediction & Confusion Matrix - Test
+
+```{r glmpred, message=FALSE, warning=FALSE}
+
+pred_glm <- predict(glm_model, test_scl, type = "prob")
+result_glm <- as.factor(ifelse(pred_glm[,2] > 0.5, "lv0", "lv1"))
+
+confusionMatrix(result_glm, test_scl$History_of_fall, positive = "lv0")
+
+auc_glm <- roc(test_scl$History_of_fall, pred_glm[,2])
+plot.roc(auc_glm, print.thres = TRUE)
+
+
+
+```
+
+Random Forest Model
+
+```{r rf, message=FALSE, warning=FALSE}
+
+rf_model <- (\(data){
+  
+  set.seed(44)
+  
+  train_control <- trainControl(method = "repeatedcv", 
+                             number = 10, 
+                             repeats = 3, 
+                             savePredictions = "final", 
+                             classProbs = TRUE, 
+                             summaryFunction = twoClassSummary)
+  
+ 
+  
+  
+  rf <- randomForest(History_of_fall~., 
+                     type = "Classification", 
+                     ntree = 1000, 
+                     maxnodes = 15,
+                     mtry = 6, 
+                     trControl = train_control,
+                     metric = "Accuracy",
+                     data = train_scl)
+  
+  perf_eval <-  rf$results$Youden %>% max()
+  print(perf_eval)
+  
+  system("say terminei")
+  
+  return(rf)
+  
+})(train_scl)
+
+print(rf_model)
+
+rf_model$results$ROC %>% max()
+pROC::auc(train_scl$History_of_fall, predict(rf_model, train_scl, type= "prob")[,2])
+pROC::auc(test_scl$History_of_fall, predict(rf_model, test_scl, type= "prob")[,2])
+
+
+
+importance(rf_model, type = 2)
+
+varImp(rf_model)
+varImpPlot(rf_model, sort = TRUE)
+
+
+
+
+```
+
+Random Forest Prediction & Confusion Matrix - Test
+
+```{r rfpred, message=FALSE, warning=FALSE}
+
+pred_rf <- predict(rf_model, test_scl, type = "prob")
+result_rf <- as.factor(ifelse(pred_rf[,2] > 0.5, "lv0", "lv1"))
+
+confusionMatrix(result_rf, test_scl$History_of_fall, positive = "lv0")
+
+auc_rf <- roc(test_scl$History_of_fall, pred_rf[,2])
+plot.roc(auc_rf, print.thres = TRUE)
+
+auc_rf
+
+```
+
+Naive Bayes
+
+Precisa-se escolher a melhor combinação de parâmetros (usekernel, fL e adjust). 
+
+usekernel: permite estimar a densidade de kernel x densidade gaussiana.
+fL: permite incorporar o suavizador de Laplace.
+adjust: permite ajustar a largura da banda da densidade de kernel.
+
+```{r nb, message=FALSE, warning=FALSE}
+
+nb_model <- (\(data){
+  
+  set.seed(55)
+  
+  train_control <- trainControl(method = "repeatedcv", 
+                             number = 10, 
+                             repeats = 3, 
+                             savePredictions = "final", 
+                             classProbs = TRUE, 
+                             summaryFunction = twoClassSummary)
+  
+  # Gerando combinações de parâmetros
+  
+  tuneGrid_nb <- expand.grid(usekernel = c(TRUE, FALSE), 
+                          fL = 0:1, 
+                          adjust = 1:5)
+  
+  nb <- train(History_of_fall~., 
+              method = "nb", 
+              preProcess = c("center", "scale"), 
+              tuneLenght = 5, 
+              trControl = train_control, 
+              tuneGrid = tuneGrid_nb, 
+              metric = "ROC", 
+              data = train_scl)
+  
+  
+  
+  
+  perf_eval <-  nb$results$Youden %>% max()
+  print(perf_eval)
+  
+  system("say terminei")
+  
+  return(nb)
+  
+})(train_scl)
+
+print(nb_model)
+plot(nb_model)
+
+nb_model$results$ROC %>% max()
+pROC::auc(train_scl$History_of_fall, predict(nb_model, train_scl, type= "prob")[,2])
+pROC::auc(test_scl$History_of_fall, predict(nb_model, test_scl, type= "prob")[,2])
+
+
+
+```
+
+Naive Bayes Prediction & Confusion Matrix - Test
+
+```{r nbpred, message=FALSE, warning=FALSE}
+
+predctnb <- predict(nb_model, test_scl)
+confusionMatrix(predctnb, test_scl$History_of_fall)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
