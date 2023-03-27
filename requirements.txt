@@ -1,0 +1,11 @@
+Mon Mar 27 17:06:39 2023
+macOS Monterey 12.6.3
+R version 4.2.0 (2022-04-22)
+doParallel installed version: 1.0.17
+glmnet installed version: 4.1-6
+gt installed version: 0.8.0
+ranger installed version: 0.14.1
+readxl installed version: 1.4.1
+skimr installed version: 2.1.5
+tidymodels installed version: 1.0.0
+tidyverse installed version: 1.3.2
