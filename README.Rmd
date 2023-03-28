@@ -102,7 +102,9 @@ elder_folds <- vfold_cv(elder_train, v=10, repeats = 3)
 Skimming through numeric variables about elderly general and preferred gait info, we can see that physical activity,  MMSE score, gait asymmetry, and all variables of coefficient of variation (CV) are highly skewed, and outliers can be the culprits. Therefore, we will need to act upon them.
 
 ```{r table_skim-1, echo=FALSE, warning=FALSE, out.width = '100%'}
-elder_numeric_vars_table <- elder_adj %>% 
+
+if(!file.exists("elder_numeric_vars_table.png")){
+  elder_adj %>% 
   select(where(is.numeric), 
          -Number, 
          -contains(".")) %>% 
@@ -113,7 +115,7 @@ elder_numeric_vars_table <- elder_adj %>%
   rename_with(~ gsub("_", " ", .)) %>% 
   mutate(Variable = gsub("_", " ", Variable),
          Variable = ifelse(!grepl("MMSE|BMI", Variable), str_to_title(Variable), Variable)) %>% 
-  gt() %>% 
+  gt(id = "elder_skim1") %>% 
   tab_header("General and preferred gait description") %>%
   opt_align_table_header(align = "left") %>%
   cols_align(align = "center", columns = c(everything(), -Variable)) %>% 
@@ -121,31 +123,33 @@ elder_numeric_vars_table <- elder_adj %>%
   tab_options(heading.title.font.weight = "bold",
               column_labels.font.weight = "bold",
               table.font.color = "#EEEEEE",
-              table.font.color.light = "#222222",
-              table.background.color = "transparent",
-              heading.background.color = "transparent",
-              column_labels.background.color = "transparent",
-              table.border.top.color = "transparent",
+              #table.font.color.light = "#222222",
+              table.background.color = "#333",
+              heading.background.color = "#333",
+              column_labels.background.color = "#333",
+              table.border.top.color = "#333",
               row.striping.include_table_body = TRUE,
-              table_body.hlines.color = "transparent",
-              table_body.vlines.color = NULL) %>% 
+              table_body.hlines.color = "#333",
+              table_body.vlines.color = NULL,
+              table.border.right.color = "#333",
+              table.border.right.width = 3,
+              table.border.left.color = "#333") %>% 
+  opt_css(css= "
+          #elder_skim1 .gt_table{
+          background-color: #333}",
+          add = TRUE, allow_duplicates = FALSE) %>% 
   #tab specific layour
   tab_style(style = list(cell_text(color = "#00589B")),
-            locations = cells_body(columns = Hist,
-                                   rows = grepl("activity|MMSE|CV", Variable, ignore.case = TRUE))) %>% 
+            locations = cells_body(
+              columns = Hist,
+              rows = grepl("activity|MMSE|CV", Variable, ignore.case = TRUE))) %>% 
   gtsave("elder_numeric_vars_table.png", vwidth = 1500, vheight = 1000)
+}
 
 
 
-#htmlwidgets::saveWidget()
-
-
-
-
-#knitr::include_graphics("temp.png")
 knitr::include_graphics("elder_numeric_vars_table.png")
 
-#gtsave(elder_numeric_vars_table, "elder_numeric_vars_table.png", vwidth = 1500, vheight = 1000)
 
 ```
 
