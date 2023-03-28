@@ -114,8 +114,8 @@ elder_adj %>%
   mutate(Variable = gsub("_", " ", Variable),
          Variable = ifelse(!grepl("MMSE|BMI", Variable), str_to_title(Variable), Variable)) %>% 
   gt() %>% 
-  tab_header("General and preferred gait description") %>% 
-  opt_align_table_header(align = "left") %>% 
+  # tab_header("General and preferred gait description") %>% 
+  # opt_align_table_header(align = "left") %>% 
   cols_align(align = "center", columns = c(everything(), -Variable)) %>% 
   #genneral tab layout
   tab_options(heading.title.font.weight = "bold",
