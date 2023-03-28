@@ -129,9 +129,12 @@ elder_adj %>%
     row.striping.include_table_body = TRUE,
     table_body.hlines.color = "transparent",
     table_body.vlines.color = NULL) %>% 
+  #tab specific layour
   tab_style(style = list(cell_text(color = "#00589B")),
             locations = cells_body(columns = Hist,
-                                   rows = grepl("activity|MMSE|CV", Variable, ignore.case = TRUE)))
+                                   rows = grepl("activity|MMSE|CV", Variable, ignore.case = TRUE))) %>% 
+  as_raw_html()
+  
   
 
 
