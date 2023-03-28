@@ -101,8 +101,8 @@ elder_folds <- vfold_cv(elder_train, v=10, repeats = 3)
 
 Skimming through numeric variables about elderly general and preferred gait info, we can see that physical activity,  MMSE score, gait asymmetry, and all variables of coefficient of variation (CV) are highly skewed, and outliers can be the culprits. Therefore, we will need to act upon them.
 
-```{r echo=FALSE, warning=FALSE}
-elder_adj %>% 
+```{r table_skim-1, echo=FALSE, warning=FALSE, out.width = '100%'}
+elder_numeric_vars_table <- elder_adj %>% 
   select(where(is.numeric), 
          -Number, 
          -contains(".")) %>% 
@@ -114,8 +114,8 @@ elder_adj %>%
   mutate(Variable = gsub("_", " ", Variable),
          Variable = ifelse(!grepl("MMSE|BMI", Variable), str_to_title(Variable), Variable)) %>% 
   gt() %>% 
-  # tab_header("General and preferred gait description") %>% 
-  # opt_align_table_header(align = "left") %>% 
+  tab_header("General and preferred gait description") %>%
+  opt_align_table_header(align = "left") %>%
   cols_align(align = "center", columns = c(everything(), -Variable)) %>% 
   #genneral tab layout
   tab_options(heading.title.font.weight = "bold",
@@ -132,12 +132,23 @@ elder_adj %>%
   #tab specific layour
   tab_style(style = list(cell_text(color = "#00589B")),
             locations = cells_body(columns = Hist,
-                                   rows = grepl("activity|MMSE|CV", Variable, ignore.case = TRUE))) 
-  
-  
+                                   rows = grepl("activity|MMSE|CV", Variable, ignore.case = TRUE))) %>% 
+  gtsave("elder_numeric_vars_table.png", vwidth = 1500, vheight = 1000)
 
+
+
+#htmlwidgets::saveWidget()
+
+
+
+
+#knitr::include_graphics("temp.png")
+knitr::include_graphics("elder_numeric_vars_table.png")
+
+#gtsave(elder_numeric_vars_table, "elder_numeric_vars_table.png", vwidth = 1500, vheight = 1000)
 
 ```
+
 
 Exploring further our data, we can make some observations:
 
