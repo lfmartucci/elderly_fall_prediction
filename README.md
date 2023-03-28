@@ -18,7 +18,7 @@ predict it using mainly information about preferred speed gait patterns.
 However, we will also construct and use some variables to reflect
 changes in gait strategy with speed.
 
-<img src="Main_files/figure-gfm/data_balance-1.png" style="display: block; margin: auto;" />
+<img src="README_files/figure-gfm/data_balance-1.png" style="display: block; margin: auto;" />
 
 ## Data split
 
@@ -53,7 +53,7 @@ Exploring our data, we can make some observations:
   because those who take a more conservative approach are more careful,
   and the riskier ones are confident in their walking ability.
 
-<img src="Main_files/figure-gfm/EDA-1.png" style="display: block; margin: auto;" />
+<img src="README_files/figure-gfm/EDA-1.png" style="display: block; margin: auto;" />
 
 ## Preparing our data - EDA
 
