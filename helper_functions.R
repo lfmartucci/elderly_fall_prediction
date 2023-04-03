@@ -15,11 +15,11 @@ load_elder_dat_adj <- function(dat_path, elder_adj_path){
   
   
   elder_bind <- left_join(elder_d1, elder_d2) %>% 
-    select(-c(`education year`, Fear_of_fall, `Fall risk`)) 
+    select(-c(`education year`, `Fall risk`)) 
   
   
   #Correcting variable type
-  d_adj <- elder_bind %>% mutate(across(where(is.numeric), ~ if(max(.) <= 5) factor(.)))
+  d_adj <- elder_bind %>% mutate(across(c(where(is.numeric), - "No_of_fall"), ~ if(max(.) <= 5) factor(.)))
   
   # Some variables where incorrectly selected
   index <- grepl("time|speed|length", colnames(d_adj))
@@ -42,13 +42,26 @@ load_elder_dat_adj <- function(dat_path, elder_adj_path){
   namessub <- gsub("[\\(|\\) ]", "", namessub)
   names(elder_adj) <- namessub
   
+  #Clean a little bit colnames
+  elder_adj_final <-  
+    elder_adj %>%
+    rename_with(~ gsub("_per_.*|_s$|_m$|kg$|cm$|_mps$", "", .)) %>% 
+    rename(physical_activity = total_physical_activity_MET_min_week)
+
+  
+  saveRDS(elder_adj_final, elder_adj_path)
+  
+  return(elder_adj_final)
+}
+
+
+elder_pref_spd <- function(elder_adj){
   # info about preferred speed
   pref_spd <-
     elder_adj %>% 
-    select(Number:MMSE_score, contains("preferred"), Heightcm:History_of_fall)
+    select(Number:MMSE_score, contains("preferred"), Heightcm:No_of_fall)
   names(pref_spd) <- names(pref_spd) %>% gsub("preferred_", "", .)
-  pref_spd <- pref_spd %>% 
-    rename(physical_activity = total_physical_activity_MET_min_week)
+  pref_spd <- pref_spd
   
   # elder long dataset by speed
   elder_long_df <- 
@@ -81,15 +94,8 @@ load_elder_dat_adj <- function(dat_path, elder_adj_path){
   elder_adj_final <- full_join(pref_spd, elder_long_df)
   
   
-  #Clean a little bit colnames
-  elder_adj_final <-  
-    elder_adj_final %>%
-    rename_with(~ gsub("_per_.*|_s$|_m$|kg$|cm$|_mps$", "", .))
+ 
   
-  
-  saveRDS(elder_adj_final, elder_adj_path)
-  
-  return(elder_adj_final)
 }
 
 #Elder plots - Hex summary ####
@@ -123,3 +129,22 @@ plot_elder <- function(var1, var2, z){
   
 }
 
+
+#Estimite perf tidy models #####
+estimate_perf <- function(model, dat, outcome){
+  cl <- match.call()
+  obj_name <- as.character(cl$model)
+  data_name <- as.character(cl$dat)
+  data_name <- gsub(".*_", "", data_name)
+  
+  reg_metrics <- metric_set(mcc, accuracy, j_index, sensitivity, specificity)
+  
+  model %>% predict(dat) %>% 
+    rename(.pred = 1) %>% 
+    bind_cols(dat %>% select({{outcome}})) %>% 
+    reg_metrics({{outcome}}, estimate = .pred) %>% 
+    select(-.estimator) %>% 
+    mutate(object = obj_name, data = data_name)
+  
+  
+}
